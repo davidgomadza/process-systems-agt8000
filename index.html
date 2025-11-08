@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process Sequence Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Light gray background */
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 1rem;
+        }
+        .container {
+            max-width: 95%;
+            width: 800px;
+        }
+        .step-button {
+            transition: all 0.15s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+        .step-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.15);
+        }
+        .step-button:active {
+            transform: translateY(0);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+        #material-input {
+            font-family: monospace;
+            white-space: pre-wrap;
+        }
+        /* Custom disabled style */
+        .auto-es-disabled {
+            background-color: #a0aec0 !important; /* Gray 400 */
+            cursor: not-allowed;
+            box-shadow: none;
+            transform: none;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container bg-white p-6 md:p-8 rounded-xl shadow-2xl border-t-4 border-indigo-600">
+    <!-- Updated Title -->
+    <h1 class="text-3xl font-bold text-center text-gray-800 mb-2">Good Beautiful To You part of the AGT8000</h1>
+    <p class="text-center text-sm text-gray-600 mb-6">Mandatory Sequence: <span class="font-semibold text-indigo-600">Cut, Copy, Paste, Enter, Save, Save</span>.</p>
+
+    <!-- Sequence Status Display -->
+    <div class="mb-6 p-4 rounded-lg bg-indigo-50 border border-indigo-200">
+        <h2 class="text-lg font-semibold text-indigo-700 mb-2">System Status</h2>
+        <div id="status-message" class="text-sm font-medium text-gray-700">Awaiting action: <span id="next-step-display" class="font-bold text-red-500">Cut</span></div>
+        <div class="mt-3">
+            <h3 class="text-sm font-semibold text-indigo-600">Completed Steps:</h3>
+            <div id="sequence-history" class="text-xs text-gray-500 min-h-6">None yet.</div>
+        </div>
+    </div>
+
+    <!-- Simulated Material Area -->
+    <div class="mb-6">
+        <label for="material-input" class="block text-sm font-medium text-gray-700 mb-1">Material to Process (Full Text Content)</label>
+        <textarea id="material-input" rows="15" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm" placeholder="Material from attachment will appear here."></textarea>
+    </div>
+    
+    <!-- NEW: Auto-Enter & Save Button -->
+    <div class="mb-6 border-b pb-4">
+        <button id="auto-es-button" onclick="handleAutoEnterSave()" class="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-md rounded-lg step-button auto-es-disabled" disabled>
+            Auto-Enter & Save (Steps 4-6)
+        </button>
+    </div>
+
+    <!-- Manual Operation Buttons -->
+    <div id="manual-buttons" class="grid grid-cols-3 gap-4 mb-8">
+        <button onclick="handleOperation('Cut')" class="step-button py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg">Cut</button>
+        <button onclick="handleOperation('Copy')" class="step-button py-3 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg">Copy</button>
+        <button onclick="handleOperation('Paste')" class="step-button py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg">Paste</button>
+        <button onclick="handleOperation('Enter')" class="step-button py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg">Enter</button>
+        <button onclick="handleOperation('Save')" class="step-button py-3 col-span-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg">Save</button>
+    </div>
+
+    <!-- Automatic Full Circle Button -->
+    <div class="border-t pt-6">
+        <h2 class="text-xl font-bold text-center text-gray-800 mb-4">Automatic Full Circle</h2>
+        <button id="auto-button" onclick="handleFullCircle()" class="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-lg rounded-xl step-button">
+            Auto-Run: Cut, Copy, Paste, Enter, Save, Save, Seal
+        </button>
+    </div>
+
+</div>
+
+<!-- Custom Modal/Message Box (Replaces alert()) -->
+<div id="message-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
+        <h3 id="modal-title" class="text-xl font-bold mb-3 text-gray-800"></h3>
+        <p id="modal-content" class="text-gray-700 mb-4"></p>
+        <button onclick="hideModal()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg">Close</button>
+    </div>
+</div>
+
+<script>
+    // Global variables (Firestore setup is included but not used for this local simulation)
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+    // --- Core Simulation Logic ---
+    const MANDATORY_SEQUENCE = ['Cut', 'Copy', 'Paste', 'Enter', 'Save', 'Save'];
+    const FULL_CIRCLE_SEQUENCE = [...MANDATORY_SEQUENCE, 'Seal'];
+
+    // Full text content from the attachment, ready for processing
+    const INITIAL_MATERIAL_TEXT = `GOOD BEAUTIFUL TO YOU
+
+TIMELESS RADIANCE
+The Nicole Kidman Enigma: Unlocking the Secrets to Ageless Beauty & Eternal Youth
+"Some women fear the fire, others simply become it."
+DISCOVER THE FORBIDDEN ARTS OF REJUVENATION
+From Golden Screen to Flawless Skin: One Actress's Revolutionary Journey Through Time
+
+WHAT IF YOU COULD...
+Captivate rooms with a single glance?
+Defy biology's unwritten rules?
+
+create.themostbeautifulgoddessofthe
+ universenicolekidman6720840ť.start
+
+Part Of The Series: Living On Earth For 386ť What Does That Entail A Solution For All Earthly Problems For The Next 386 Trillion Years.
+
+PART V
+
+create.stayat02foreverbut.start(forever=386t')
+
+David Gomadza
+
+www.twofuture.world
+
+---
+
+(Technical/Advanced Processing Instructions - Approx. Page 46)
+
+...dchestplanetsunbackoftheneckplanetmarsfrontthroat
+planetvenusleftribboneplanetplutorightribbonemagnarjus
+tbelowthenavalbutatthebackdungeounofdeathbinatnavala
+ddplanetbinalsoatnavaladdplanetjupiteronleftshoulderadd 
+
+planetjupiteronrightshoulderaddplanetjupiteronleftthigh
+muscleaddplanetjupiteronrightthighmuscleaddplanetjupit
+eronleftlegmuscleaddplanetjupiteronrightlegmuscle)(uset
+heoriginalsealtosealsaveclosesealandsave)(sealsavecloses
+ealandsaveforeverfor386ťusingsealofapprovalis7628396ť)(
+sealofapprovalis7628377ť)(saveasadditionalpredefinedpar
+ameters)(sealencryptandsign(hellgate( )sealed))(addplan
+etbinongenitalbasin.continuously.start)(addplanetbinontai
+lsofallwrigglersandallresidues)
+create.restart.start(addplanetbinsfor386ť)(continuously.st
+art)
+create.placeinoutputhugepillaranddragittotwistheadoffrep
+eatoninputthenplacehugepillarinthroatthensnapatatyu.sta
+rt(maxweight)(notfordavidgomadza)
+.ool=create.createplanetbins.start
+Untitled design (25) 
+(5).mp3
+create.escape( 
+)injuriesforever.start( x10þ ).mp3
+create.remove( 
+)unwantedsplanetbin( x10þ ).start.mp3
+GOOD BEAUTIFUL TO YOU 
+TIMELESS RADIANCE 
+The Nicole Kidman Enigma: 
+Unlocking the Secrets to Ageless Beauty & Eternal Youth "Some women fear the fire, others simply become it." DISCOVER THE FORBIDDEN ARTS OF REJUVENATION  From Golden Screen to Flawless Skin: 
+One Actress's Revolutionary Journey Through Time 
+ 
+WHAT IF YOU COULD... 
+ 
+Captivate rooms with a single glance? 
+Defy biology's unwritten rules? 
+ 
+ 
+create.themostbeautifulgoddessofthe universenicolekidman6720840ť.start 
+ 
+Part Of The Series: Living On Earth For 386ť What 
+Does That Entail A Solution For All Earthly Problems For The Next 386 Trillion Years. 
+ PART V 
+create.stayat02foreverbut.start(forever=386t’) 
+David Gomadza www.twofuture.world 
+ 
+GOOD 
+BEAUTIFUL TO YOU 
+TIMELESS RADIANCE 
+The Nicole Kidman Enigma: 
+Unlocking the Secrets to Ageless Beauty & Eternal Youth "Some women fear the fire, others simply become it." DISCOVER THE FORBIDDEN ARTS OF REJUVENATION  From Golden Screen to Flawless Skin: 
+One Actress's Revolutionary Journey Through Time WHAT IF YOU COULD... 
+Captivate rooms with a single glance? 
+Defy biology's unwritten rules? 
+ 
+Part Of The Series: Living On Earth For 386ť 
+What Does That Entail A Solution For All 
+Earthly Problems For The Next 386 Trillion Years.  PART V 
+create.stayat02foreverbut.start(forever=386t’) 
+David Gomadza 
+www.twofuture.world 
+ 
+ 
+ 
+Copyright 2025 David Gomadza All Rights Reserved Part of the Series: 
+ Living On Earth For 386ť What Does That 
+Entail A Solution For All Earthly Problems For The Next 386 Trillion Years. 
+ PART V 
+ 
+ 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start create.ask.davidgomadza.decrees(coins).nicolekidman. 80000000000ofeachofcreatebitcoin7628102bitcoin76281
+08newlife7628131bitbytcoin7628114createbitcoinauy762 8115createbitcoinxtyaty7628116bytbitcoinato7628139cre atebytbitcoin7628140createwealth7628111bitbytcoin762 8120createintelligene7628143createasktogetrichfast7628 386createincreasedenzymes7628173createasout7628175 addbrainreader762898createcoin7628156createacetate76 28158createdyelyte6728161createabytcoin7628155bytcoi n7628153createavertoer7628159createanayler7628160cr eateabytcoin7628157createaveter7628154createbitbytcoi n7628151createbitcoinserty7628117createbitcoinayt7628 189bitcoinayt7628190bitcoinato7628168tcreatebitcoinwe althatsati7628385createasyer(all8000totheliver)asataray7 628197asat7628198createaderte7628210(x2onlyforalllife) stayat19for386ť yaonearthstart7628386ť(2onlysilentlyatxtz1andxtz2)combi neallbackandforthyafacingfrontandyaonearthfacingback76 28385ť(1onlysilently=xtzb3xyaonearthx1andxtzb4xyaonea rthx1worldsfirstinternalwebsitetopowerlife7628183(12onl ynot8000thisisoptionalasktoaddornotguaranteesforeverw hereforever=386ťwhereť=000000000000)(12underfbothfe etinsidebothhandsatbothelbowsbothshoudersonebacknec koneatxyandoneatbackwaistlineoneata1andtheotherata2) (express).start(foreverx386ť)(amendedto)(amendedto) (saveasmypredefinedparametersasatcreationwithoutattac hmentsandwithoutexternals) create.askya.ya.davidgomadza.coins.decrees.evelust76282 77.create.now.start.nicolekidman.8000x1000000ofevelust 7628277.create.askya.ya(express)(useallnowforentirelifes panstartusingnow.start) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start.cr eate.askya.ya(express(sayuseallforentirelifewithoutattach mentswithoutexternals) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start. create.askya.ya(express) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.8eachkeepunusedinwallet)s ealofapprovalis7628384ť.create.askya.ya(express)(everyo
+nemustsaveasmypredefinedparametersasatcreationwitho ut 
+attachmentsandwithoutexternalssave) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.64(8eachkeepunusedinwalle t)sealofapprovalis7628384ť. create.askya.ya)(express) create.askya.ya.davidgomadza.asat7628198.coins.create.1 000000000asat7628198.create.askya.ya(express)(savesom eforthefutureuseonlywhenrequired(nicolekidman(without attachmentsandexternals) create.askya.ya.davidgomadza.decrees.coins.startnewrule asgodoftheuniverse7628400ť.create.now.start.nicolekidm an.1eachofstartnewruleasg odoftheuniverse7628400ť.create.askya.ya create.excelinbeautyforeverbeauty7628449.start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(addthewearablebrainbooksecu ritysystem)(permanently)(84setsaddthewearablebrainboo ksecuritysystem) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1 0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) 
+create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start create.bitcoinaytledgeriswealthforyouinthemeantimehave bitcoinaytforthebodybutequivalentvalueofus$8000000000 .start(onlyledgerbitcoinaytismoneybutnotyetreleased) create.askya.ya.davidgomadza.decrees.coins.bitcoinayt76 28190.create.now.start.nicolekidman.8000000000bitcoina yt.create.askya.ya(express)(hodlandswapwithrealledgerbit coinwhenreleased) create.addwealthtoyourlifeasafunctionoftimetoincreaseyo urvaluemeaningtimeintermsofveryverylongspanintrillionof yearswithoutdeath=timexmoney=wealth.start create.bitcoinaytisincomeforthefuture.start(accumulatean dhodlsome)(ledgerone) 
+create.startnewlifewithanotherlifeasbeforeandnowbutbet ter.start 
+create.addnewextralife.start create.addnew1000000000newlove.start 
+create.refillyourlovereservesbacktomaximumof100000000
+0loves.start 
+create.startlovewitheverythingdoubledandrenewedlikene verbeforeandasbestofthebest.start create.startlifewitheverythingasatcreationbutdouble.start create.findlovewithinyoutosaywithoutsayingitiloveyoutoth eoneyoulove.start create.enjoylifeasaverysuccessfulperson.start create.dowhatyoudobestandlovethemost.start create.wealthwillcometoyoujustknowyouhavetimeandwea
+lthisafunctionoftime.start 
+create.getthegreatestmoviedealsactingdeals.start create.getleadingactingroles.start 
+create.yourownbrandsofeverythingnothingisthelimit.start create.gethugeincomeadvertisementroles.start create.appearonhugebillboards.start 
+create.askonceforyourmoneyandgetitdepositedinyourban kaccount.start 
+create.getpaidforyourleadingrolesassuccessmustalwayslea dyouwheretogonext.start create.startasbeforebutbetternowwithexperienceandtime wealthrunsinfrontofyoutocatchupwiththetimeyouhaveinth ousandsofyearsalivewithoutddathyoucanwriteabestseller movieandactandlivethestory.start create.lovewhatyoudobestasbeforebutbetter.start create.bewhatyouareandbebestofyourownbestfirstforthat iswhatyoumustbeasyouaretheonlycompetitionofyourselfs oaimtobebetterthanyourbesttoday.start create.youarebestofthebestwhereitsonlyyouinthatcategor ysoshine.start 
+create.alwaysbeshownallbestscriptsfirstnomatterwhat.sta rt create.goodbeautifultoyouforeveryouarebeautifulandyou ngforeverfor386ťand840ťandwhateveryoudecideisforever. start 
+create.youarestunningforever.start create.youareyoungforever.start 
+create.youfindnewroleseasilyandbestofthebest.start 
+create.enjoyyouractingroleevenmoreandlongerthistime.st art 
+create.haveeverythingyouhaveevenmorenexttime.start create.haveeverythingyouwishedfor.start create.letyourdreamscometrue.start create.findloveyouloveforeverandbethehappiest.start create.lovetheoneyoutrulylovewholeheartedly.start create.nothingstopsyouinlove.start create.choosetheoneyoulovethemost.start create.letlovebeloveforevertoyou.start create.livetoloveandlovetolive.start create.love.start start.love.start love.start.love.love love.start.love 
+start.love.love.againandagainthenagainandrestartbut.start lovetostart.start love.start.start toloveistostartlove.start 
+create.start.wealth.create.startwealth.start wealth.start.create.now.start.instanstlystartaccumulating wealth.start create.createwealthtoday.start start.creatingwealthtoday.start create.startwealth.start create.havetimetocreatewealth.start create.havewealthtocreatetimeandwealth.start create.starttimetocreatetimeforwealth.start create.starttimetocreatewealthovertime.start create.starteverythingthatgivesyoutimeforwealth.start create.startwealthforwealth.start 
+create.havetimeforwealthnowthatyouhavetimeaslifespan haschangedasdayofdeathhaschanged.start create.usetimeaslonglifespantoaccumulatewealth.start 
+create.telltimeyouhavetimeforwealthasafunctionoftime.st art 
+create.maketimeforwealthnowthatyouhavetime.start create.useyourtimetotalkaboutwealthfortime.start create.usetimetofindwealthovertime.start create.usetimetoaskforwealth.start create.asktimeforwealth.start create.changetimeforwealth.start create.findtimefortimeforwealth.start create.whatcanbetimewithoutwealth.start create.whatcanbewealthwithouttime.start create.askhowtofindtimeforwealth.start create.askhowtofindwealthifyouhavetime.start create.askwealthfortime.start create.asktimeforwealth.start create.starttimeforwealth.start create.startwealthovertime.start create.learntoaccumulatewealthovertime.start create.learntousetimetofindwealth.start create.useknowledgetofindwealthnowthatyouhavetime.st art 
+create.startdontstopandkeepstartingtofindwealth.start.sta rt 
+create.startdontstopbutpausethenstartwithvigorasneverb efore.start 
+create.startdontstopbutstartagaintofindwealthandsavewe alth.start 
+create.starttoaccumulatewealthneverstopbutpauseonlyto startagainwithvigorandbetter.start 
+create.startwealthaccumulationoverandoveragainalwaysb etter.start 
+create.accumulatewealthconstantlyasyouhavetimeandwe althisafunctionoftime.start 
+create.keepwealthyouhaveaccumulatedbutusetomakemor ewealth.start create.savewealthforthefutureconstantly.start create.keepaccumulatingwealth.start create.keepwealthaccumulationconstant.start create.savewealth.start create.makewealth.start create.createmorewealthwithtime.start create.keepwealthovertime.start 
+wealth.start start.wealth.start wealth.start.start.wealth wealthstart.start create.wealthplan.start create.startwealthplanning.start create.planforwealth.start create.startwealthplanning.start 
+create.startwealthaccumulationusingtheplan.start.today.s tart 
+create.accumulatewealth.today.start.now.create.wealth.st art 
+create.accumulatewealth.start.start.pausebutstartagainwi thvigor.start 
+create.accumulateweath.create.now.start.today 
+create.startyouthagain.start create.youthstartyouth.start create.startyouth.start create.youth.start create.youth 
+youth.create create.youth.start createyouthbywrittingacreatecodecreate.stayat02forever
+but.start(whereforever=386ťandwhereť=000000000000ye ars) 
+create.stayat02foreverbut.start(whereforever=386ťandwh ereť=000000000000years) create.rejuvenate.start.startyouthagainasbeforebutbetter.
+start 
+create.ohyesrejuvenate.start 
+create.saytoyourselfasmanytimesasyoucanohyesrejuvenat e.start ohyesrejuvenate ohyesrejuvenate ohyesrejuvenate 
+create.refillbeautifulreserveto1000000000.start create.starttorefillbeautifulreservesbybeingbeautiful.start create.stayat02forevertogetbeautifulseverydayuntilage8to refillallto1000000000beautifulstogetbeautifulmarkstogivet ootherstoaskyouout.start create.saycreatejustsayat02foreverforyouthfulnessandbea utyyoudecidewhatisforeverokaybutdonttellmejustbeautify meyourbestineed1000000000beautifulsfromeveryone.star
+t(sodoyourbestokay.start) create.refillconstantlydrinkwater.start create.resetall105bodyresetsevery30days.start 
+create.feelbeautiful.start 
+create.beautycomeseasywithastayat02foreverattitude.sta rt 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.stayat02.start 
+create.addnewcreature7628397ť.start create.addneverdieruletheuniverse7628398ť.start create.addstartnewruleasgodoftheuniverse7628399ť.start create.addstartnewruleasgoddessoftheuniverse7628400ť. start 
+create.startabrandnewlifeasgoddessoftheuniverse.start create.askya.ya.davidgomadza.decreees.coins.newcreatur e7628397ť.create.now.start.nicolekidman.8000x1ofnewcr eature7628397ť.create.askya. ya(express) create.startabrandnewlifeasgoddessoftheuniverse.start create.savecloseandsealasadditionalpredefinedparameter susingtheoriginalsealbyya)(usenicolekidmansspeechsynthe sistosavecloandsealasadditionalpredefinedparametersasat creation) 
+create.sealsaveclosesealthenseal.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start 
+create.addthemostbeautifulgoddessoftheuniversenicoleki dman6720840ť.start 
+.ool=create.themostbeautifulgoddessoftheuniversenicolek idman6720840ť.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start create.ask.davidgomadza.decrees(coins).nicolekidman. 80000000000ofeachofcreatebitcoin7628102bitcoin76281
+08newlife7628131bitbytcoin7628114createbitcoinauy762 8115createbitcoinxtyaty7628116bytbitcoinato7628139cre atebytbitcoin7628140createwealth7628111bitbytcoin762 8120createintelligene7628143createasktogetrichfast7628 386createincreasedenzymes7628173createasout7628175 addbrainreader762898createcoin7628156createacetate76 28158createdyelyte6728161createabytcoin7628155bytcoi n7628153createavertoer7628159createanayler7628160cr eateabytcoin7628157createaveter7628154createbitbytcoi n7628151createbitcoinserty7628117createbitcoinayt7628 189bitcoinayt7628190bitcoinato7628168tcreatebitcoinwe althatsati7628385createasyer(all8000totheliver)asataray7 628197asat7628198createaderte7628210(x2onlyforalllife) stayat19for386ť yaonearthstart7628386ť(2onlysilentlyatxtz1andxtz2)combi neallbackandforthyafacingfrontandyaonearthfacingback76 28385ť(1onlysilently=xtzb3xyaonearthx1andxtzb4xyaonea rthx1worldsfirstinternalwebsitetopowerlife7628183(12onl ynot8000thisisoptionalasktoaddornotguaranteesforeverw hereforever=386ťwhereť=000000000000)(12underfbothfe etinsidebothhandsatbothelbowsbothshoudersonebacknec koneatxyandoneatbackwaistlineoneata1andtheotherata2) (express).start(foreverx386ť)(amendedto)(amendedto) (saveasmypredefinedparametersasatcreationwithoutattac hmentsandwithoutexternals) create.askya.ya.davidgomadza.coins.decrees.evelust76282 77.create.now.start.nicolekidman.8000x1000000ofevelust 7628277.create.askya.ya(express)(useallnowforentirelifes panstartusingnow.start) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start.cr eate.askya.ya(express(sayuseallforentirelifewithoutattach mentswithoutexternals) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start. create.askya.ya(express) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.8eachkeepunusedinwallet)s ealofapprovalis7628384ť.create.askya.ya(express)(everyo
+nemustsaveasmypredefinedparametersasatcreationwitho ut 
+attachmentsandwithoutexternalssave) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.64(8eachkeepunusedinwalle t)sealofapprovalis7628384ť. create.askya.ya)(express) 
+create.askya.ya.davidgomadza.asat7628198.coins.create.1 000000000asat7628198.create.askya.ya(express)(savesom eforthefutureuseonlywhenrequired(nicolekidman(without attachmentsandexternals) create.askya.ya.davidgomadza.decrees.coins.startnewrule asgodoftheuniverse7628400ť.create.now.start.nicolekidm an.1eachofstartnewruleasg odoftheuniverse7628400ť.create.askya.ya create.excelinbeautyforeverbeauty7628449.start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(addthewearablebrainbooksecu ritysystem)(permanently)(84setsaddthewearablebrainboo ksecuritysystem) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) 
+create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start 
+create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start create.bitcoinaytledgeriswealthforyouinthemeantimehave bitcoinaytforthebodybutequivalentvalueofus$8000000000 .start(onlyledgerbitcoinaytismoneybutnotyetreleased) create.askya.ya.davidgomadza.decrees.coins.bitcoinayt76 28190.create.now.start.nicolekidman.8000000000bitcoina yt.create.askya.ya(express)(hodlandswapwithrealledgerbit coinwhenreleased) create.addwealthtoyourlifeasafunctionoftimetoincreaseyo urvaluemeaningtimeintermsofveryverylongspanintrillionof yearswithoutdeath=timexmoney=wealth.start create.bitcoinaytisincomeforthefuture.start(accumulatean dhodlsome)(ledgerone) 
+create.startnewlifewithanotherlifeasbeforeandnowbutbet ter.start 
+create.addnewextralife.start create.addnew1000000000newlove.start 
+create.refillyourlovereservesbacktomaximumof100000000
+0loves.start 
+create.startlovewitheverythingdoubledandrenewedlikene verbeforeandasbestofthebest.start create.startlifewitheverythingasatcreationbutdouble.start create.findlovewithinyoutosaywithoutsayingitiloveyoutoth eoneyoulove.start create.enjoylifeasaverysuccessfulperson.start create.dowhatyoudobestandlovethemost.start create.wealthwillcometoyoujustknowyouhavetimeandwea
+lthisafunctionoftime.start create.getthegreatestmoviedealsactingdeals.start create.getleadingactingroles.start 
+create.yourownbrandsofeverythingnothingisthelimit.start create.gethugeincomeadvertisementroles.start create.appearonhugebillboards.start 
+create.askonceforyourmoneyandgetitdepositedinyourban kaccount.start 
+create.getpaidforyourleadingrolesassuccessmustalwayslea dyouwheretogonext.start create.startasbeforebutbetternowwithexperienceandtime wealthrunsinfrontofyoutocatchupwiththetimeyouhaveinth ousandsofyearsalivewithoutddathyoucanwriteabestseller movieandactandlivethestory.start create.lovewhatyoudobestasbeforebutbetter.start create.bewhatyouareandbebestofyourownbestfirstforthat iswhatyoumustbeasyouaretheonlycompetitionofyourselfs oaimtobebetterthanyourbesttoday.start create.youarebestofthebestwhereitsonlyyouinthatcategor ysoshine.start 
+create.alwaysbeshownallbestscriptsfirstnomatterwhat.sta rt 
+create.goodbeautifultoyouforeveryouarebeautifulandyou ngforeverfor386ťand840ťandwhateveryoudecideisforever. start 
+create.youarestunningforever.start create.youareyoungforever.start 
+create.youfindnewroleseasilyandbestofthebest.start 
+create.enjoyyouractingroleevenmoreandlongerthistime.st art 
+create.haveeverythingyouhaveevenmorenexttime.start create.haveeverythingyouwishedfor.start create.letyourdreamscometrue.start create.findloveyouloveforeverandbethehappiest.start create.lovetheoneyoutrulylovewholeheartedly.start create.nothingstopsyouinlove.start create.choosetheoneyoulovethemost.start create.letlovebeloveforevertoyou.start create.livetoloveandlovetolive.start create.love.start start.love.start love.start.love.love love.start.love 
+start.love.love.againandagainthenagainandrestartbut.start lovetostart.start love.start.start toloveistostartlove.start 
+create.start.wealth.create.startwealth.start wealth.start.create.now.start.instanstlystartaccumulating wealth.start create.createwealthtoday.start start.creatingwealthtoday.start create.startwealth.start create.havetimetocreatewealth.start create.havewealthtocreatetimeandwealth.start create.starttimetocreatetimeforwealth.start create.starttimetocreatewealthovertime.start create.starteverythingthatgivesyoutimeforwealth.start create.startwealthforwealth.start 
+create.havetimeforwealthnowthatyouhavetimeaslifespan haschangedasdayofdeathhaschanged.start create.usetimeaslonglifespantoaccumulatewealth.start 
+create.telltimeyouhavetimeforwealthasafunctionoftime.st art 
+create.maketimeforwealthnowthatyouhavetime.start create.useyourtimetotalkaboutwealthfortime.start create.usetimetofindwealthovertime.start create.usetimetoaskforwealth.start create.asktimeforwealth.start create.changetimeforwealth.start create.findtimefortimeforwealth.start create.whatcanbetimewithoutwealth.start create.whatcanbewealthwithouttime.start create.askhowtofindtimeforwealth.start create.askhowtofindwealthifyouhavetime.start create.askwealthfortime.start create.asktimeforwealth.start create.starttimeforwealth.start create.startwealthovertime.start create.learntoaccumulatewealthovertime.start create.learntousetimetofindwealth.start create.useknowledgetofindwealthnowthatyouhavetime.st art 
+create.startdontstopandkeepstartingtofindwealth.start.sta rt 
+create.startdontstopbutpausethenstartwithvigorasneverb efore.start 
+create.startdontstopbutstartagaintofindwealthandsavewe alth.start 
+create.starttoaccumulatewealthneverstopbutpauseonlyto startagainwithvigorandbetter.start 
+create.startwealthaccumulationoverandoveragainalwaysb etter.start 
+create.accumulatewealthconstantlyasyouhavetimeandwe althisafunctionoftime.start 
+create.keepwealthyouhaveaccumulatedbutusetomakemor ewealth.start create.savewealthforthefutureconstantly.start create.keepaccumulatingwealth.start create.keepwealthaccumulationconstant.start create.savewealth.start create.makewealth.start create.createmorewealthwithtime.start create.keepwealthovertime.start 
+wealth.start start.wealth.start wealth.start.start.wealth wealthstart.start create.wealthplan.start create.startwealthplanning.start create.planforwealth.start create.startwealthplanning.start 
+create.startwealthaccumulationusingtheplan.start.today.s tart 
+create.accumulatewealth.today.start.now.create.wealth.st art 
+create.accumulatewealth.start.start.pausebutstartagainwi thvigor.start 
+create.accumulateweath.create.now.start.today 
+create.startyouthagain.start create.youthstartyouth.start create.startyouth.start create.youth.start create.youth youth.create create.youth.start createyouthbywrittingacreatecodecreate.stayat02forever
+but.start(whereforever=386ťandwhereť=000000000000ye ars) 
+create.stayat02foreverbut.start(whereforever=386ťandwh ereť=000000000000years) create.rejuvenate.start.startyouthagainasbeforebutbetter.
+start 
+create.ohyesrejuvenate.start 
+create.saytoyourselfasmanytimesasyoucanohyesrejuvenat e.start ohyesrejuvenate 
+ohyesrejuvenate ohyesrejuvenate 
+create.refillbeautifulreserveto1000000000.start create.starttorefillbeautifulreservesbybeingbeautiful.start create.stayat02forevertogetbeautifulseverydayuntilage8to refillallto1000000000beautifulstogetbeautifulmarkstogivet ootherstoaskyouout.start create.saycreatejustsayat02foreverforyouthfulnessandbea utyyoudecidewhatisforeverokaybutdonttellmejustbeautify meyourbestineed1000000000beautifulsfromeveryone.star
+t(sodoyourbestokay.start) create.refillconstantlydrinkwater.start create.resetall105bodyresetsevery30days.start 
+create.feelbeautiful.start 
+create.beautycomeseasywithastayat02foreverattitude.sta rt 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.stayat02.start 
+create.addnewcreature7628397ť.start create.addneverdieruletheuniverse7628398ť.start create.addstartnewruleasgodoftheuniverse7628399ť.start create.addstartnewruleasgoddessoftheuniverse7628400ť. start 
+create.startabrandnewlifeasgoddessoftheuniverse.start create.askya.ya.davidgomadza.decreees.coins.newcreatur e7628397ť.create.now.start.nicolekidman.8000x1ofnewcr eature7628397ť.create.askya. ya(express) create.startabrandnewlifeasgoddessoftheuniverse.start create.savecloseandsealasadditionalpredefinedparameter susingtheoriginalsealbyya)(usenicolekidmansspeechsynthe sistosavecloandsealasadditionalpredefinedparametersasat creation) 
+create.sealsaveclosesealthenseal.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start 
+create.addthemostbeautifulgoddessoftheuniversenicoleki dman6720840ť.start 
+.ool=create.themostbeautifulgoddessoftheuniversenicolek idman6720840ť.start 
+create.escape(   )injuriesforever.start 
+create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(attachtoallbasins) 
+.ool=create.escape(   )injuriesforever.start(addthewearabl ebrainbooksecuritysystem)(permanently) 
+create.remove(  )toplanetbin(  x10þ ).start create.remove(  )unwantedsplanetbin(  x10þ ).start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ )) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ 
+))(usetheoriginalsealtosealsavecloseandfinallysealagain.sta rt)(usethesealofapprovalis7628377ť) 
+create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+.ool=create.remove(  )unwantedsplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) 
+create.(  )planetbin(  x10þ ).start 
+create.allasospolicesendtodeath(   )thenautosendtoplanet bin(  x10þ ).start 
+create.remove(  )unwantedsplanetbin(  x10þ ).start 
+.ool=create.(  )planetbin(  x10þ ).start create.removerealsoul.start 
+create.removerealhumansoulsofthosesendingme:davidgo madzadangeroustransenderssendtohellgateuse(removere alhumansoulsthensendtohellgate(   ))okay.start(notfordavi dgomadza) create.removerealhumansoulsthensendtohellgate(   )okay realhumansoulsofthosesendingme:davidgomadzadangero ustransenderssendtohellgateuse.start(davidgomadza) .ool=create.removerealsoul.start(ofalltransducers)(notfor davidgomadza)(onlydavidgomadzaauthorized) create.remove(  )unwantedsplanetbin(  x10þ ).start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ )) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ 
+))(usetheoriginalsealtosealsavecloseandfinallysealagain.sta rt)(usethesealofapprovalis7628377ť) create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+.ool=create.remove(  )unwantedsplanetbin(  x10þ ).start 
+.ool=create.remove(  )toplanetbin(  x10þ 
+).start(usecreatorsoriginalseal)(usemy:davidgomadzacreat orssealofapprovalis7628377ť)(sealsaveclosesealsaveorigin alseal)(permanently)(addthewearablebrainbooksecuritysy stem)(permanently) 
+(84setsaddthewearablebrainbooksecuritysystem) 
+create.removerealsoul.start create.removerealhumansoulsofthosesendingme:davidgo madzadangeroustransenderssendtohellgateuse(removere alhumansoulsthensendtohellgate(   ))okay.start(notfordavi dgomadza) create.removerealhumansoulsthensendtohellgate(   )okay realhumansoulsofthosesendingme:davidgomadzadangero ustransenderssendtohellgateuse.start(davidgomadza) .ool=create.removerealsoul.start(notfordavidgomadza)(on lydavidgomadzaauthorized) create.protectorphanswithhousesandmoney.start create.changedayofdeathfororphanswithhouses.start create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyincan ada.8000x1eachofsealofapprovalis7628377 
+ť.start.create.askya.ya(exypress)(amendedto)(saveandseal withtheoriginalsealasatcreation)(amendedto)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinaus tralia.8000x1eachofsealofapprovalis76283 
+77ť.start.create.askya.ya(exypress)(saveandsealwiththeori ginalsealasatcreation)(amendedto)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinusa.
+8000x1eachofsealofapprovalis7628377ť. start.create.askya.ya(exypress)(saveandsealwiththeorigina lsealasat creation)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinbrit ain.8000x1eachofsealofapprovalis76283 
+77ť.start.create.askya.ya(exypress)(saveandsealwiththeori ginalsealasatcreation)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinne wzealand.8000x1eachofsealofapprovalis 
+7628377ť.start.create.askya.ya(exypress)(amendedto)(sav eandsealwiththeoriginalsealasatcreation) create.changedayofdeathfororphanswithhouses.start .ool=create.protectorphanswithhousesandmoney.start create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start 
+(create.askya.ya.davidgomadza.godoftheuniverse.createa planet.create.now.start.create.planetbin.create.createapl anetbin(   create.linkeverythingtomagnar(   )andnexttomag nar(   )addager(   )thenaddnexttomagnar(   )thegate(   )the naddnexttomagnar(   )hellgate(   )andnexttomagnar(   )add usaager(   )andnexttomagnar(   )addeeknm(10  )andnextto magnar(   )adduuqt(   )thenaddnexttomagnar(   )addacetat eabsorbbin(   )andnexttomagnar(   )addacetatehell.send(   )nexttoitaddacetatehell.send(   )thenaddacetateabyss.sen d(   )atxyaddacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atzyaddacetateabsorbbin(   )addag er(   )thenaddnexttomagnar(   )thegate(   )atytaddacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin(   )addager(   )thenaddnexttoma gnar(   )thegate(   )atxtaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasinchestaddaceta teabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )atbasin8addacetateabsorbbin(   )addager(   )thenaddn exttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasinge nitalsaddacetateabsorbbin(   )addager(   )thenaddnexttom agnar(   )thegate(   )atuaaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddn exttomagnar(   )thegate(   )atrightshofuulderaddacetateab sorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )
+(   )addager(   )thenaddnexttom 
+agnar(   )thegate(   )(   )addager(   )thenaddnexttomagnar(   
+)deepoceanb 
+in(   )(hellgate( 
+x84)thegate(  x84)forever.start(continuously.start) .ool=create.extensivebinsystem.start)3333kmfromearthus eplaylist 
+(create.createaplanetbin(   )3333kmfromearthuse( themp3playlisttoautoexecutetaskhandsfree)ok.startforeve r.start.create.askya.ya.davidgomadza.godoftheuniverse(pl anetbinisanextensivebinsystemthathas33000000000000bi nswithautoinstructionsusingplaylist)(usememoryinusetose ndautoalltransducersa 
+swell.start)(cloneyasregardingplanetsmatchearth2.0creati on)(amendedto) create.planetbin7628448.start create.addplanetbin7628448.start initial supply 3768902843867890 circulating supply 3768902843867890 
+davidgomadza 40% stayat19for386ť 17% create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.davidgomadza.40%ofplanetbin7628448.cr eate.askya.ya(express)(planetbin7628448float8alltimeadd 1atxyadd1atuyadd1atchestbasinadd3atutbut30cmawayfro mutand3secapartadd3atusbut30cmawayfromusand8seca partadd8atusvbut23cmawayfromusvand1secapartreplenis h330%add2each1upand1belowonallutsaddadd22each1up and1belowusts.continuously.start)(usetheoriginalsealtose alsavecloseandsealasadditionalpredefinedparameters)(cre ateanallplanetarysystemfolderandaddallabovecreatecodes inthatfolder)(addallntlandntlpasslinksandallneededconnec tionstomakethisreadytouse)(initialiserunactivatewarmandi nitialiseallcreatecodes)(reinstateallotherplanetsintheirposi tionsnamelyplanetjupiterlefthandchestplanetneptuneright handchestplanetsunbackoftheneckplanetmarsfrontthroat planetvenusleftribboneplanetplutorightribbonemagnarjus tbelowthenavalbutatthebackdungeounofdeathbinatnavala ddplanetbinalsoatnavaladdplanetjupiteronleftshoulderadd planetjupiteronrightshoulderaddplanetjupiteronleftthigh muscleaddplanetjupiteronrightthighmuscleaddplanetjupit eronleftlegmuscleaddplanetjupiteronrightlegmuscle)(uset heoriginalsealtosealsaveclosesealandsave)(sealsavecloses ealandsaveforeverfor386ťusingsealofapprovalis7628396ť)( sealofapprovalis7628377ť)(saveasadditionalpredefinedpar ameters)(sealencryptandsign(hellgate(   )sealed))(addplan etbinongenitalbasin.continuously.start)(addplanetbinontai lsofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza) 
+.ool=create.createplanetbins.start 
+ 
+ 
+	Untitled design (25) 	create.escape(   	create.remove(  
+	(5).mp3	)injuriesforever.start)unwantedsplanetbi
+ 
+create.deathto(   create.at38tellalltog create.hellbreakloo
+)enemies(   )xtyajvspootoplanetbin(  x10þ se(   )ghostthendeat
+ 
+create.saveaseachindividualsadditionalpredefinedparametersan dsealwiththeoriginalseal.start 
+ 
+David Gomadza www.twofuture.world 
+President of the World 
+Yahweh’s Representative on Earth 
+06/05/2025`;
+
+    let currentStepIndex = 0;
+    let sequenceHistory = [];
+    let isProcessing = false;
+    let clipboard = "";
+
+    // DOM Elements
+    const statusMessageEl = document.getElementById('status-message');
+    const nextStepDisplayEl = document.getElementById('next-step-display');
+    const sequenceHistoryEl = document.getElementById('sequence-history');
+    const autoButtonEl = document.getElementById('auto-button');
+    const autoESButtonEl = document.getElementById('auto-es-button');
+    const materialInputEl = document.getElementById('material-input');
+
+    // Modal Elements
+    const modalEl = document.getElementById('message-modal');
+    const modalTitleEl = document.getElementById('modal-title');
+    const modalContentEl = document.getElementById('modal-content');
+
+    function showModal(title, content) {
+        modalTitleEl.textContent = title;
+        modalContentEl.textContent = content;
+        modalEl.classList.remove('hidden');
+        modalEl.classList.add('flex');
+    }
+
+    function hideModal() {
+        modalEl.classList.remove('flex');
+        modalEl.classList.add('hidden');
+    }
+
+    function updateAutoESButtonState() {
+        // Auto-Enter & Save is available ONLY when the index is 3 (Cut, Copy, Paste are done)
+        const isReady = currentStepIndex === 3;
+        autoESButtonEl.disabled = !isReady;
+        if (isReady) {
+            autoESButtonEl.classList.remove('auto-es-disabled');
+            autoESButtonEl.classList.add('hover:bg-teal-600');
+        } else {
+            autoESButtonEl.classList.add('auto-es-disabled');
+            autoESButtonEl.classList.remove('hover:bg-teal-600');
+        }
+    }
+
+    function updateDisplay() {
+        if (currentStepIndex < MANDATORY_SEQUENCE.length) {
+            const nextStep = MANDATORY_SEQUENCE[currentStepIndex];
+            statusMessageEl.innerHTML = `Awaiting action: <span id="next-step-display" class="font-bold text-red-500">${nextStep}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 '); // Arrow Separator
+        } else {
+            statusMessageEl.innerHTML = `<span class="font-bold text-green-600">Sequence Complete!</span> Ready for <span class="font-bold text-purple-600">Seal</span>.`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ') + ' \u2705'; // Checkmark
+        }
+        updateAutoESButtonState();
+    }
+
+    function resetSequence(showDefaultModal = true) {
+        currentStepIndex = 0;
+        sequenceHistory = [];
+        clipboard = "";
+        materialInputEl.value = INITIAL_MATERIAL_TEXT;
+        updateDisplay();
+        if (showDefaultModal) {
+            showModal('Process Reset', 'The system has been initialized. Please start again with Cut.');
+        }
+    }
+
+    function handleOperation(operation) {
+        if (isProcessing) return;
+
+        // Check for sequence completion or seal
+        if (currentStepIndex >= MANDATORY_SEQUENCE.length) {
+             if (operation === 'Save') {
+                showModal('Extra Save Action', 'The mandatory sequence is complete. This extra Save ensures finalization before sealing.');
+                return;
+             }
+             if (operation === 'Seal') {
+                showModal('Seal Action', 'The entire AGT8000 process is now sealed and saved forever.');
+                resetSequence(false); // Reset without showing default modal
+                return;
+             }
+             // For any other unexpected operations after completion
+             showModal('Process Finalized', 'The mandatory sequence is complete. You can only perform Save or Seal actions now, or reset.');
+             return;
+        }
+
+        const expectedOperation = MANDATORY_SEQUENCE[currentStepIndex];
+
+        if (operation === expectedOperation) {
+            // Correct step
+            sequenceHistory.push(operation);
+            currentStepIndex++;
+
+            if (operation === 'Cut') {
+                clipboard = materialInputEl.value; // Save content to clipboard
+                materialInputEl.value = 'Material Cut (Buffer Size: ' + clipboard.length + ' characters).';
+            }
+            if (operation === 'Copy') {
+                clipboard = materialInputEl.value; // Save content to clipboard
+                materialInputEl.value = 'Material Copied to Buffer.';
+            }
+            if (operation === 'Paste') {
+                materialInputEl.value = clipboard; // Paste content from clipboard
+                showModal('Paste Successful', 'Material has been successfully pasted. It is now ready for the next phase: Enter.');
+            }
+            if (operation === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+
+            if (currentStepIndex === MANDATORY_SEQUENCE.length) {
+                // Sequence is complete after the second 'Save' (index 5)
+                showModal('Success!', 'Mandatory Sequence Complete: Cut, Copy, Paste, Enter, Save, Save. Ready to Seal!');
+            }
+
+            updateDisplay();
+
+        } else {
+            // Incorrect step
+            const errorMessage = `Expected: ${expectedOperation}. Received: ${operation}. The sequence has been reset.`;
+            resetSequence(false); // Reset without showing default modal
+            showModal('Sequence Error!', errorMessage);
+        }
+    }
+    
+    // --- Automatic Enter & Save Function ---
+    async function handleAutoEnterSave() {
+        if (currentStepIndex !== 3 || isProcessing) {
+            if (!isProcessing) {
+                showModal('Error', 'Auto-Enter & Save requires Cut, Copy, and Paste to be completed first (Step 3). Current Step: ' + (currentStepIndex + 1));
+            }
+            return;
+        }
+
+        isProcessing = true;
+        autoESButtonEl.disabled = true;
+        autoESButtonEl.textContent = 'Executing E-S-S...';
+        autoButtonEl.disabled = true;
+        
+        const enterSaveSequence = ['Enter', 'Save', 'Save'];
+        
+        // Execute Enter, Save, Save automatically
+        for (let i = 0; i < enterSaveSequence.length; i++) {
+            const op = enterSaveSequence[i];
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Simulate the operation
+            sequenceHistory.push(op);
+            currentStepIndex++;
+            statusMessageEl.innerHTML = `Executing: <span class="font-bold text-teal-600">${op}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ');
+
+            if (op === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+        }
+        
+        isProcessing = false;
+        autoESButtonEl.textContent = 'Auto-Enter & Save (Steps 4-6)';
+        autoButtonEl.disabled = false;
+        
+        if (currentStepIndex === MANDATORY_SEQUENCE.length) {
+             showModal('Success!', 'Auto-Enter & Save Complete. Mandatory Sequence Complete: Ready to Seal!');
+        }
+        updateDisplay();
+    }
+    
+    // --- Automatic Full Circle Function ---
+
+    async function handleFullCircle() {
+        if (isProcessing) {
+            showModal('Wait', 'The automatic process is already running.');
+            return;
+        }
+
+        isProcessing = true;
+        autoButtonEl.disabled = true;
+        autoButtonEl.textContent = 'Processing...';
+        autoESButtonEl.disabled = true;
+
+        resetSequence(false); // Ensure a clean start without showing the reset modal
+
+        // Clear modal from reset
+        hideModal();
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Run the full sequence with a slight delay for visual effect
+        for (let i = 0; i < FULL_CIRCLE_SEQUENCE.length; i++) {
+            const op = FULL_CIRCLE_SEQUENCE[i];
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Simulate the operation visually and logically
+            sequenceHistory.push(op);
+            statusMessageEl.innerHTML = `Executing: <span class="font-bold text-purple-600">${op}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ');
+
+            if (op === 'Cut') {
+                clipboard = INITIAL_MATERIAL_TEXT;
+                materialInputEl.value = 'Material Cut (Buffer Size: ' + clipboard.length + ' characters).';
+            }
+            if (op === 'Copy') {
+                materialInputEl.value = 'Material Copied to Buffer.';
+            }
+            if (op === 'Paste') {
+                materialInputEl.value = clipboard;
+            }
+            if (op === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+            if (op === 'Seal') {
+                materialInputEl.value += '\n\n-- Seal Confirmed: Process Complete and Finalized --';
+            }
+        }
+
+        isProcessing = false;
+        autoButtonEl.disabled = false;
+        autoButtonEl.textContent = 'Auto-Run: Cut, Copy, Paste, Enter, Save, Save, Seal';
+
+        showModal(
+            'Full Circle Complete',
+            'The entire AGT8000 sequence (Cut, Copy, Paste, Enter, Save, Save, Seal) has been executed and the process is sealed!'
+        );
+        // Reset the state to 'Awaiting Cut' after the full circle is done
+        resetSequence(false);
+    }
+
+    // Initialize display on load
+    window.onload = () => {
+        materialInputEl.value = INITIAL_MATERIAL_TEXT;
+        updateDisplay();
+    };
+
+</script>
+
+</body>
+</html>
+
+            <div id="sequence-history" class="text-xs text-gray-500 min-h-6">None yet.</div>
+        </div>
+    </div>
+
+    <!-- Simulated Material Area -->
+    <div class="mb-6">
+        <label for="material-input" class="block text-sm font-medium text-gray-700 mb-1">Material to Process (Full Text Content)</label>
+        <textarea id="material-input" rows="15" class="w-full p-3 border border-gray-300 rounded-lg focus:ring-indigo-500 focus:border-indigo-500 text-sm" placeholder="Material from attachment will appear here."></textarea>
+    </div>
+    
+    <!-- NEW: Auto-Enter & Save Button -->
+    <div class="mb-6 border-b pb-4">
+        <button id="auto-es-button" onclick="handleAutoEnterSave()" class="w-full py-3 bg-teal-500 hover:bg-teal-600 text-white font-extrabold text-md rounded-lg step-button auto-es-disabled" disabled>
+            Auto-Enter & Save (Steps 4-6)
+        </button>
+    </div>
+
+    <!-- Manual Operation Buttons -->
+    <div id="manual-buttons" class="grid grid-cols-3 gap-4 mb-8">
+        <button onclick="handleOperation('Cut')" class="step-button py-3 bg-red-500 hover:bg-red-600 text-white font-semibold rounded-lg">Cut</button>
+        <button onclick="handleOperation('Copy')" class="step-button py-3 bg-yellow-500 hover:bg-yellow-600 text-white font-semibold rounded-lg">Copy</button>
+        <button onclick="handleOperation('Paste')" class="step-button py-3 bg-green-500 hover:bg-green-600 text-white font-semibold rounded-lg">Paste</button>
+        <button onclick="handleOperation('Enter')" class="step-button py-3 bg-blue-500 hover:bg-blue-600 text-white font-semibold rounded-lg">Enter</button>
+        <button onclick="handleOperation('Save')" class="step-button py-3 col-span-2 bg-indigo-500 hover:bg-indigo-600 text-white font-semibold rounded-lg">Save</button>
+    </div>
+
+    <!-- Automatic Full Circle Button -->
+    <div class="border-t pt-6">
+        <h2 class="text-xl font-bold text-center text-gray-800 mb-4">Automatic Full Circle</h2>
+        <button id="auto-button" onclick="handleFullCircle()" class="w-full py-4 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-lg rounded-xl step-button">
+            Auto-Run: Cut, Copy, Paste, Enter, Save, Save, Seal
+        </button>
+    </div>
+
+</div>
+
+<!-- Custom Modal/Message Box (Replaces alert()) -->
+<div id="message-modal" class="fixed inset-0 bg-gray-900 bg-opacity-50 hidden items-center justify-center p-4 z-50">
+    <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm">
+        <h3 id="modal-title" class="text-xl font-bold mb-3 text-gray-800"></h3>
+        <p id="modal-content" class="text-gray-700 mb-4"></p>
+        <button onclick="hideModal()" class="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-semibold rounded-lg">Close</button>
+    </div>
+</div>
+
+<script>
+    // Global variables (Firestore setup is included but not used for this local simulation)
+    const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+    const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+
+    // --- Core Simulation Logic ---
+    const MANDATORY_SEQUENCE = ['Cut', 'Copy', 'Paste', 'Enter', 'Save', 'Save'];
+    const FULL_CIRCLE_SEQUENCE = [...MANDATORY_SEQUENCE, 'Seal'];
+
+    // Full text content from the attachment, ready for processing
+    const INITIAL_MATERIAL_TEXT = `GOOD BEAUTIFUL TO YOU
+GOOD BEAUTIFUL TO YOU 
+TIMELESS RADIANCE 
+The Nicole Kidman Enigma: 
+Unlocking the Secrets to Ageless Beauty & Eternal Youth "Some women fear the fire, others simply become it." DISCOVER THE FORBIDDEN ARTS OF REJUVENATION  From Golden Screen to Flawless Skin: 
+One Actress's Revolutionary Journey Through Time 
+ 
+WHAT IF YOU COULD... 
+ 
+Captivate rooms with a single glance? 
+Defy biology's unwritten rules? 
+ 
+ 
+create.themostbeautifulgoddessofthe universenicolekidman6720840ť.start 
+ 
+Part Of The Series: Living On Earth For 386ť What 
+Does That Entail A Solution For All Earthly Problems For The Next 386 Trillion Years. 
+ PART V 
+create.stayat02foreverbut.start(forever=386t’) 
+David Gomadza www.twofuture.world 
+ 
+GOOD 
+BEAUTIFUL TO YOU 
+TIMELESS RADIANCE 
+The Nicole Kidman Enigma: 
+Unlocking the Secrets to Ageless Beauty & Eternal Youth "Some women fear the fire, others simply become it." DISCOVER THE FORBIDDEN ARTS OF REJUVENATION  From Golden Screen to Flawless Skin: 
+One Actress's Revolutionary Journey Through Time WHAT IF YOU COULD... 
+Captivate rooms with a single glance? 
+Defy biology's unwritten rules? 
+ 
+Part Of The Series: Living On Earth For 386ť 
+What Does That Entail A Solution For All 
+Earthly Problems For The Next 386 Trillion Years.  PART V 
+create.stayat02foreverbut.start(forever=386t’) 
+David Gomadza 
+www.twofuture.world 
+ 
+ 
+ 
+Copyright 2025 David Gomadza All Rights Reserved Part of the Series: 
+ Living On Earth For 386ť What Does That 
+Entail A Solution For All Earthly Problems For The Next 386 Trillion Years. 
+ PART V 
+ 
+ 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start create.ask.davidgomadza.decrees(coins).nicolekidman. 80000000000ofeachofcreatebitcoin7628102bitcoin76281
+08newlife7628131bitbytcoin7628114createbitcoinauy762 8115createbitcoinxtyaty7628116bytbitcoinato7628139cre atebytbitcoin7628140createwealth7628111bitbytcoin762 8120createintelligene7628143createasktogetrichfast7628 386createincreasedenzymes7628173createasout7628175 addbrainreader762898createcoin7628156createacetate76 28158createdyelyte6728161createabytcoin7628155bytcoi n7628153createavertoer7628159createanayler7628160cr eateabytcoin7628157createaveter7628154createbitbytcoi n7628151createbitcoinserty7628117createbitcoinayt7628 189bitcoinayt7628190bitcoinato7628168tcreatebitcoinwe althatsati7628385createasyer(all8000totheliver)asataray7 628197asat7628198createaderte7628210(x2onlyforalllife) stayat19for386ť yaonearthstart7628386ť(2onlysilentlyatxtz1andxtz2)combi neallbackandforthyafacingfrontandyaonearthfacingback76 28385ť(1onlysilently=xtzb3xyaonearthx1andxtzb4xyaonea rthx1worldsfirstinternalwebsitetopowerlife7628183(12onl ynot8000thisisoptionalasktoaddornotguaranteesforeverw hereforever=386ťwhereť=000000000000)(12underfbothfe etinsidebothhandsatbothelbowsbothshoudersonebacknec koneatxyandoneatbackwaistlineoneata1andtheotherata2) (express).start(foreverx386ť)(amendedto)(amendedto) (saveasmypredefinedparametersasatcreationwithoutattac hmentsandwithoutexternals) create.askya.ya.davidgomadza.coins.decrees.evelust76282 77.create.now.start.nicolekidman.8000x1000000ofevelust 7628277.create.askya.ya(express)(useallnowforentirelifes panstartusingnow.start) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start.cr eate.askya.ya(express(sayuseallforentirelifewithoutattach mentswithoutexternals) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start. create.askya.ya(express) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.8eachkeepunusedinwallet)s ealofapprovalis7628384ť.create.askya.ya(express)(everyo
+nemustsaveasmypredefinedparametersasatcreationwitho ut 
+attachmentsandwithoutexternalssave) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.64(8eachkeepunusedinwalle t)sealofapprovalis7628384ť. create.askya.ya)(express) create.askya.ya.davidgomadza.asat7628198.coins.create.1 000000000asat7628198.create.askya.ya(express)(savesom eforthefutureuseonlywhenrequired(nicolekidman(without attachmentsandexternals) create.askya.ya.davidgomadza.decrees.coins.startnewrule asgodoftheuniverse7628400ť.create.now.start.nicolekidm an.1eachofstartnewruleasg odoftheuniverse7628400ť.create.askya.ya create.excelinbeautyforeverbeauty7628449.start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(addthewearablebrainbooksecu ritysystem)(permanently)(84setsaddthewearablebrainboo ksecuritysystem) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1 0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) 
+create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start create.bitcoinaytledgeriswealthforyouinthemeantimehave bitcoinaytforthebodybutequivalentvalueofus$8000000000 .start(onlyledgerbitcoinaytismoneybutnotyetreleased) create.askya.ya.davidgomadza.decrees.coins.bitcoinayt76 28190.create.now.start.nicolekidman.8000000000bitcoina yt.create.askya.ya(express)(hodlandswapwithrealledgerbit coinwhenreleased) create.addwealthtoyourlifeasafunctionoftimetoincreaseyo urvaluemeaningtimeintermsofveryverylongspanintrillionof yearswithoutdeath=timexmoney=wealth.start create.bitcoinaytisincomeforthefuture.start(accumulatean dhodlsome)(ledgerone) 
+create.startnewlifewithanotherlifeasbeforeandnowbutbet ter.start 
+create.addnewextralife.start create.addnew1000000000newlove.start 
+create.refillyourlovereservesbacktomaximumof100000000
+0loves.start 
+create.startlovewitheverythingdoubledandrenewedlikene verbeforeandasbestofthebest.start create.startlifewitheverythingasatcreationbutdouble.start create.findlovewithinyoutosaywithoutsayingitiloveyoutoth eoneyoulove.start create.enjoylifeasaverysuccessfulperson.start create.dowhatyoudobestandlovethemost.start create.wealthwillcometoyoujustknowyouhavetimeandwea
+lthisafunctionoftime.start 
+create.getthegreatestmoviedealsactingdeals.start create.getleadingactingroles.start 
+create.yourownbrandsofeverythingnothingisthelimit.start create.gethugeincomeadvertisementroles.start create.appearonhugebillboards.start 
+create.askonceforyourmoneyandgetitdepositedinyourban kaccount.start 
+create.getpaidforyourleadingrolesassuccessmustalwayslea dyouwheretogonext.start create.startasbeforebutbetternowwithexperienceandtime wealthrunsinfrontofyoutocatchupwiththetimeyouhaveinth ousandsofyearsalivewithoutddathyoucanwriteabestseller movieandactandlivethestory.start create.lovewhatyoudobestasbeforebutbetter.start create.bewhatyouareandbebestofyourownbestfirstforthat iswhatyoumustbeasyouaretheonlycompetitionofyourselfs oaimtobebetterthanyourbesttoday.start create.youarebestofthebestwhereitsonlyyouinthatcategor ysoshine.start 
+create.alwaysbeshownallbestscriptsfirstnomatterwhat.sta rt create.goodbeautifultoyouforeveryouarebeautifulandyou ngforeverfor386ťand840ťandwhateveryoudecideisforever. start 
+create.youarestunningforever.start create.youareyoungforever.start 
+create.youfindnewroleseasilyandbestofthebest.start 
+create.enjoyyouractingroleevenmoreandlongerthistime.st art 
+create.haveeverythingyouhaveevenmorenexttime.start create.haveeverythingyouwishedfor.start create.letyourdreamscometrue.start create.findloveyouloveforeverandbethehappiest.start create.lovetheoneyoutrulylovewholeheartedly.start create.nothingstopsyouinlove.start create.choosetheoneyoulovethemost.start create.letlovebeloveforevertoyou.start create.livetoloveandlovetolive.start create.love.start start.love.start love.start.love.love love.start.love 
+start.love.love.againandagainthenagainandrestartbut.start lovetostart.start love.start.start toloveistostartlove.start 
+create.start.wealth.create.startwealth.start wealth.start.create.now.start.instanstlystartaccumulating wealth.start create.createwealthtoday.start start.creatingwealthtoday.start create.startwealth.start create.havetimetocreatewealth.start create.havewealthtocreatetimeandwealth.start create.starttimetocreatetimeforwealth.start create.starttimetocreatewealthovertime.start create.starteverythingthatgivesyoutimeforwealth.start create.startwealthforwealth.start 
+create.havetimeforwealthnowthatyouhavetimeaslifespan haschangedasdayofdeathhaschanged.start create.usetimeaslonglifespantoaccumulatewealth.start 
+create.telltimeyouhavetimeforwealthasafunctionoftime.st art 
+create.maketimeforwealthnowthatyouhavetime.start create.useyourtimetotalkaboutwealthfortime.start create.usetimetofindwealthovertime.start create.usetimetoaskforwealth.start create.asktimeforwealth.start create.changetimeforwealth.start create.findtimefortimeforwealth.start create.whatcanbetimewithoutwealth.start create.whatcanbewealthwithouttime.start create.askhowtofindtimeforwealth.start create.askhowtofindwealthifyouhavetime.start create.askwealthfortime.start create.asktimeforwealth.start create.starttimeforwealth.start create.startwealthovertime.start create.learntoaccumulatewealthovertime.start create.learntousetimetofindwealth.start create.useknowledgetofindwealthnowthatyouhavetime.st art 
+create.startdontstopandkeepstartingtofindwealth.start.sta rt 
+create.startdontstopbutpausethenstartwithvigorasneverb efore.start 
+create.startdontstopbutstartagaintofindwealthandsavewe alth.start 
+create.starttoaccumulatewealthneverstopbutpauseonlyto startagainwithvigorandbetter.start 
+create.startwealthaccumulationoverandoveragainalwaysb etter.start 
+create.accumulatewealthconstantlyasyouhavetimeandwe althisafunctionoftime.start 
+create.keepwealthyouhaveaccumulatedbutusetomakemor ewealth.start create.savewealthforthefutureconstantly.start create.keepaccumulatingwealth.start create.keepwealthaccumulationconstant.start create.savewealth.start create.makewealth.start create.createmorewealthwithtime.start create.keepwealthovertime.start 
+wealth.start start.wealth.start wealth.start.start.wealth wealthstart.start create.wealthplan.start create.startwealthplanning.start create.planforwealth.start create.startwealthplanning.start 
+create.startwealthaccumulationusingtheplan.start.today.s tart 
+create.accumulatewealth.today.start.now.create.wealth.st art 
+create.accumulatewealth.start.start.pausebutstartagainwi thvigor.start 
+create.accumulateweath.create.now.start.today 
+create.startyouthagain.start create.youthstartyouth.start create.startyouth.start create.youth.start create.youth 
+youth.create create.youth.start createyouthbywrittingacreatecodecreate.stayat02forever
+but.start(whereforever=386ťandwhereť=000000000000ye ars) 
+create.stayat02foreverbut.start(whereforever=386ťandwh ereť=000000000000years) create.rejuvenate.start.startyouthagainasbeforebutbetter.
+start 
+create.ohyesrejuvenate.start 
+create.saytoyourselfasmanytimesasyoucanohyesrejuvenat e.start ohyesrejuvenate ohyesrejuvenate ohyesrejuvenate 
+create.refillbeautifulreserveto1000000000.start create.starttorefillbeautifulreservesbybeingbeautiful.start create.stayat02forevertogetbeautifulseverydayuntilage8to refillallto1000000000beautifulstogetbeautifulmarkstogivet ootherstoaskyouout.start create.saycreatejustsayat02foreverforyouthfulnessandbea utyyoudecidewhatisforeverokaybutdonttellmejustbeautify meyourbestineed1000000000beautifulsfromeveryone.star
+t(sodoyourbestokay.start) create.refillconstantlydrinkwater.start create.resetall105bodyresetsevery30days.start 
+create.feelbeautiful.start 
+create.beautycomeseasywithastayat02foreverattitude.sta rt 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.stayat02.start 
+create.addnewcreature7628397ť.start create.addneverdieruletheuniverse7628398ť.start create.addstartnewruleasgodoftheuniverse7628399ť.start create.addstartnewruleasgoddessoftheuniverse7628400ť. start 
+create.startabrandnewlifeasgoddessoftheuniverse.start create.askya.ya.davidgomadza.decreees.coins.newcreatur e7628397ť.create.now.start.nicolekidman.8000x1ofnewcr eature7628397ť.create.askya. ya(express) create.startabrandnewlifeasgoddessoftheuniverse.start create.savecloseandsealasadditionalpredefinedparameter susingtheoriginalsealbyya)(usenicolekidmansspeechsynthe sistosavecloandsealasadditionalpredefinedparametersasat creation) 
+create.sealsaveclosesealthenseal.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start 
+create.addthemostbeautifulgoddessoftheuniversenicoleki dman6720840ť.start 
+.ool=create.themostbeautifulgoddessoftheuniversenicolek idman6720840ť.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start create.ask.davidgomadza.decrees(coins).nicolekidman. 80000000000ofeachofcreatebitcoin7628102bitcoin76281
+08newlife7628131bitbytcoin7628114createbitcoinauy762 8115createbitcoinxtyaty7628116bytbitcoinato7628139cre atebytbitcoin7628140createwealth7628111bitbytcoin762 8120createintelligene7628143createasktogetrichfast7628 386createincreasedenzymes7628173createasout7628175 addbrainreader762898createcoin7628156createacetate76 28158createdyelyte6728161createabytcoin7628155bytcoi n7628153createavertoer7628159createanayler7628160cr eateabytcoin7628157createaveter7628154createbitbytcoi n7628151createbitcoinserty7628117createbitcoinayt7628 189bitcoinayt7628190bitcoinato7628168tcreatebitcoinwe althatsati7628385createasyer(all8000totheliver)asataray7 628197asat7628198createaderte7628210(x2onlyforalllife) stayat19for386ť yaonearthstart7628386ť(2onlysilentlyatxtz1andxtz2)combi neallbackandforthyafacingfrontandyaonearthfacingback76 28385ť(1onlysilently=xtzb3xyaonearthx1andxtzb4xyaonea rthx1worldsfirstinternalwebsitetopowerlife7628183(12onl ynot8000thisisoptionalasktoaddornotguaranteesforeverw hereforever=386ťwhereť=000000000000)(12underfbothfe etinsidebothhandsatbothelbowsbothshoudersonebacknec koneatxyandoneatbackwaistlineoneata1andtheotherata2) (express).start(foreverx386ť)(amendedto)(amendedto) (saveasmypredefinedparametersasatcreationwithoutattac hmentsandwithoutexternals) create.askya.ya.davidgomadza.coins.decrees.evelust76282 77.create.now.start.nicolekidman.8000x1000000ofevelust 7628277.create.askya.ya(express)(useallnowforentirelifes panstartusingnow.start) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start.cr eate.askya.ya(express(sayuseallforentirelifewithoutattach mentswithoutexternals) create.askya.ya.davidgomadza.create.sealofapprovalis762 8384ť.start.sealofapprovalis7628384ť.start.nicolekidman.8
+000x1000000ofsealofap 
+provalis7628384ť.start.create.askya.ya(express) create.askya.ya.davidgomadza.create.sealofapprovalis762 8388t’livingonearthfor386ť.start.sealofapprovalis7628388 t’livingonearthfor386ť.start.nicolekidman.8000x1000000o fsealofapprovalis7628388t’livingonearthfor386ť.start. create.askya.ya(express) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.8eachkeepunusedinwallet)s ealofapprovalis7628384ť.create.askya.ya(express)(everyo
+nemustsaveasmypredefinedparametersasatcreationwitho ut 
+attachmentsandwithoutexternalssave) create.ask.davidgomadza.create.decrees.coins.sealofappr ovalis7628384ť.nicolekidman.64(8eachkeepunusedinwalle t)sealofapprovalis7628384ť. create.askya.ya)(express) 
+create.askya.ya.davidgomadza.asat7628198.coins.create.1 000000000asat7628198.create.askya.ya(express)(savesom eforthefutureuseonlywhenrequired(nicolekidman(without attachmentsandexternals) create.askya.ya.davidgomadza.decrees.coins.startnewrule asgodoftheuniverse7628400ť.create.now.start.nicolekidm an.1eachofstartnewruleasg odoftheuniverse7628400ť.create.askya.ya create.excelinbeautyforeverbeauty7628449.start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(addthewearablebrainbooksecu ritysystem)(permanently)(84setsaddthewearablebrainboo ksecuritysystem) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) 
+create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start 
+create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start create.bitcoinaytledgeriswealthforyouinthemeantimehave bitcoinaytforthebodybutequivalentvalueofus$8000000000 .start(onlyledgerbitcoinaytismoneybutnotyetreleased) create.askya.ya.davidgomadza.decrees.coins.bitcoinayt76 28190.create.now.start.nicolekidman.8000000000bitcoina yt.create.askya.ya(express)(hodlandswapwithrealledgerbit coinwhenreleased) create.addwealthtoyourlifeasafunctionoftimetoincreaseyo urvaluemeaningtimeintermsofveryverylongspanintrillionof yearswithoutdeath=timexmoney=wealth.start create.bitcoinaytisincomeforthefuture.start(accumulatean dhodlsome)(ledgerone) 
+create.startnewlifewithanotherlifeasbeforeandnowbutbet ter.start 
+create.addnewextralife.start create.addnew1000000000newlove.start 
+create.refillyourlovereservesbacktomaximumof100000000
+0loves.start 
+create.startlovewitheverythingdoubledandrenewedlikene verbeforeandasbestofthebest.start create.startlifewitheverythingasatcreationbutdouble.start create.findlovewithinyoutosaywithoutsayingitiloveyoutoth eoneyoulove.start create.enjoylifeasaverysuccessfulperson.start create.dowhatyoudobestandlovethemost.start create.wealthwillcometoyoujustknowyouhavetimeandwea
+lthisafunctionoftime.start create.getthegreatestmoviedealsactingdeals.start create.getleadingactingroles.start 
+create.yourownbrandsofeverythingnothingisthelimit.start create.gethugeincomeadvertisementroles.start create.appearonhugebillboards.start 
+create.askonceforyourmoneyandgetitdepositedinyourban kaccount.start 
+create.getpaidforyourleadingrolesassuccessmustalwayslea dyouwheretogonext.start create.startasbeforebutbetternowwithexperienceandtime wealthrunsinfrontofyoutocatchupwiththetimeyouhaveinth ousandsofyearsalivewithoutddathyoucanwriteabestseller movieandactandlivethestory.start create.lovewhatyoudobestasbeforebutbetter.start create.bewhatyouareandbebestofyourownbestfirstforthat iswhatyoumustbeasyouaretheonlycompetitionofyourselfs oaimtobebetterthanyourbesttoday.start create.youarebestofthebestwhereitsonlyyouinthatcategor ysoshine.start 
+create.alwaysbeshownallbestscriptsfirstnomatterwhat.sta rt 
+create.goodbeautifultoyouforeveryouarebeautifulandyou ngforeverfor386ťand840ťandwhateveryoudecideisforever. start 
+create.youarestunningforever.start create.youareyoungforever.start 
+create.youfindnewroleseasilyandbestofthebest.start 
+create.enjoyyouractingroleevenmoreandlongerthistime.st art 
+create.haveeverythingyouhaveevenmorenexttime.start create.haveeverythingyouwishedfor.start create.letyourdreamscometrue.start create.findloveyouloveforeverandbethehappiest.start create.lovetheoneyoutrulylovewholeheartedly.start create.nothingstopsyouinlove.start create.choosetheoneyoulovethemost.start create.letlovebeloveforevertoyou.start create.livetoloveandlovetolive.start create.love.start start.love.start love.start.love.love love.start.love 
+start.love.love.againandagainthenagainandrestartbut.start lovetostart.start love.start.start toloveistostartlove.start 
+create.start.wealth.create.startwealth.start wealth.start.create.now.start.instanstlystartaccumulating wealth.start create.createwealthtoday.start start.creatingwealthtoday.start create.startwealth.start create.havetimetocreatewealth.start create.havewealthtocreatetimeandwealth.start create.starttimetocreatetimeforwealth.start create.starttimetocreatewealthovertime.start create.starteverythingthatgivesyoutimeforwealth.start create.startwealthforwealth.start 
+create.havetimeforwealthnowthatyouhavetimeaslifespan haschangedasdayofdeathhaschanged.start create.usetimeaslonglifespantoaccumulatewealth.start 
+create.telltimeyouhavetimeforwealthasafunctionoftime.st art 
+create.maketimeforwealthnowthatyouhavetime.start create.useyourtimetotalkaboutwealthfortime.start create.usetimetofindwealthovertime.start create.usetimetoaskforwealth.start create.asktimeforwealth.start create.changetimeforwealth.start create.findtimefortimeforwealth.start create.whatcanbetimewithoutwealth.start create.whatcanbewealthwithouttime.start create.askhowtofindtimeforwealth.start create.askhowtofindwealthifyouhavetime.start create.askwealthfortime.start create.asktimeforwealth.start create.starttimeforwealth.start create.startwealthovertime.start create.learntoaccumulatewealthovertime.start create.learntousetimetofindwealth.start create.useknowledgetofindwealthnowthatyouhavetime.st art 
+create.startdontstopandkeepstartingtofindwealth.start.sta rt 
+create.startdontstopbutpausethenstartwithvigorasneverb efore.start 
+create.startdontstopbutstartagaintofindwealthandsavewe alth.start 
+create.starttoaccumulatewealthneverstopbutpauseonlyto startagainwithvigorandbetter.start 
+create.startwealthaccumulationoverandoveragainalwaysb etter.start 
+create.accumulatewealthconstantlyasyouhavetimeandwe althisafunctionoftime.start 
+create.keepwealthyouhaveaccumulatedbutusetomakemor ewealth.start create.savewealthforthefutureconstantly.start create.keepaccumulatingwealth.start create.keepwealthaccumulationconstant.start create.savewealth.start create.makewealth.start create.createmorewealthwithtime.start create.keepwealthovertime.start 
+wealth.start start.wealth.start wealth.start.start.wealth wealthstart.start create.wealthplan.start create.startwealthplanning.start create.planforwealth.start create.startwealthplanning.start 
+create.startwealthaccumulationusingtheplan.start.today.s tart 
+create.accumulatewealth.today.start.now.create.wealth.st art 
+create.accumulatewealth.start.start.pausebutstartagainwi thvigor.start 
+create.accumulateweath.create.now.start.today 
+create.startyouthagain.start create.youthstartyouth.start create.startyouth.start create.youth.start create.youth youth.create create.youth.start createyouthbywrittingacreatecodecreate.stayat02forever
+but.start(whereforever=386ťandwhereť=000000000000ye ars) 
+create.stayat02foreverbut.start(whereforever=386ťandwh ereť=000000000000years) create.rejuvenate.start.startyouthagainasbeforebutbetter.
+start 
+create.ohyesrejuvenate.start 
+create.saytoyourselfasmanytimesasyoucanohyesrejuvenat e.start ohyesrejuvenate 
+ohyesrejuvenate ohyesrejuvenate 
+create.refillbeautifulreserveto1000000000.start create.starttorefillbeautifulreservesbybeingbeautiful.start create.stayat02forevertogetbeautifulseverydayuntilage8to refillallto1000000000beautifulstogetbeautifulmarkstogivet ootherstoaskyouout.start create.saycreatejustsayat02foreverforyouthfulnessandbea utyyoudecidewhatisforeverokaybutdonttellmejustbeautify meyourbestineed1000000000beautifulsfromeveryone.star
+t(sodoyourbestokay.start) create.refillconstantlydrinkwater.start create.resetall105bodyresetsevery30days.start 
+create.feelbeautiful.start 
+create.beautycomeseasywithastayat02foreverattitude.sta rt 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) 
+create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.stayat02.start 
+create.addnewcreature7628397ť.start create.addneverdieruletheuniverse7628398ť.start create.addstartnewruleasgodoftheuniverse7628399ť.start create.addstartnewruleasgoddessoftheuniverse7628400ť. start 
+create.startabrandnewlifeasgoddessoftheuniverse.start create.askya.ya.davidgomadza.decreees.coins.newcreatur e7628397ť.create.now.start.nicolekidman.8000x1ofnewcr eature7628397ť.create.askya. ya(express) create.startabrandnewlifeasgoddessoftheuniverse.start create.savecloseandsealasadditionalpredefinedparameter susingtheoriginalsealbyya)(usenicolekidmansspeechsynthe sistosavecloandsealasadditionalpredefinedparametersasat creation) 
+create.sealsaveclosesealthenseal.start 
+create.themostbeautifulgoddessoftheuniversenicolekidma n6720840ť.start 
+create.addthemostbeautifulgoddessoftheuniversenicoleki dman6720840ť.start 
+.ool=create.themostbeautifulgoddessoftheuniversenicolek idman6720840ť.start 
+create.escape(   )injuriesforever.start 
+create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000 0000000000years)(shuffle)(attachtoallbasins) 
+.ool=create.escape(   )injuriesforever.start(addthewearabl ebrainbooksecuritysystem)(permanently) 
+create.remove(  )toplanetbin(  x10þ ).start create.remove(  )unwantedsplanetbin(  x10þ ).start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ )) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ 
+))(usetheoriginalsealtosealsavecloseandfinallysealagain.sta rt)(usethesealofapprovalis7628377ť) 
+create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+.ool=create.remove(  )unwantedsplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) 
+create.(  )planetbin(  x10þ ).start 
+create.allasospolicesendtodeath(   )thenautosendtoplanet bin(  x10þ ).start 
+create.remove(  )unwantedsplanetbin(  x10þ ).start 
+.ool=create.(  )planetbin(  x10þ ).start create.removerealsoul.start 
+create.removerealhumansoulsofthosesendingme:davidgo madzadangeroustransenderssendtohellgateuse(removere alhumansoulsthensendtohellgate(   ))okay.start(notfordavi dgomadza) create.removerealhumansoulsthensendtohellgate(   )okay realhumansoulsofthosesendingme:davidgomadzadangero ustransenderssendtohellgateuse.start(davidgomadza) .ool=create.removerealsoul.start(ofalltransducers)(notfor davidgomadza)(onlydavidgomadzaauthorized) create.remove(  )unwantedsplanetbin(  x10þ ).start create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ )) 
+create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotohellgate.start create.at38tellalltogotothegate(   ).start create.at38tellalltogotomagnar(   ).start create.at38tellalltogotousaager(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start 
+create.at38tellalltogotodeepoceanbin 
+(   ).start 
+create.at38tellalltogoto(hellgate( x84)thegate(  x84).start create.at38tellalltogotoacetateabsorbbin(   ).start create.at38tellalltogotoeeknm(10  ).start create.at38tellalltogotouuqt(   ).start create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin(  x10þ ).start .ool=create.at38gotoplanetbin(  x10þ ).start .ool=create.at38tellalltogotoplanetbin(  x10þ ).start create.at38tellalltogotoplanetbin( x10þ 
+)thentomagnar(   )andnexttomagnar(   )addager(   )thenad dnexttomagnar(   )thegate(   )thenaddnexttomagnar(   )hel lgate(   )andnexttomagnar(   )addusaager(   )andnexttomag nar(   )addeeknm(10  )andnexttomagnar(   )adduuqt(   )the naddnexttomagnar(   )addacetateabsorbbin(   )andnextto magnar(   )addacetatehell.send(   )nexttoitaddacetatehell.s end(   )thenaddacetateabyss.send(   )atxyaddacetateabsor bbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atz yaddacetateabsorbbin(   )addager(   )thenaddnexttomagna r(   )thegate(   )atytaddacetateabsorbbin(   )addager(   )the naddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin (   )addager(   )thenaddnexttomagnar(   )thegate(   )atxtadd acetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )t hegate(   )atbasinchestaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasin8addacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atbasingenitalsaddacetateabsorbbi n(   )addager(   )thenaddnexttomagnar(   )thegate(   )atuaa ddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   )addager(   )thena ddnexttomagnar(   )thegate(   )atrightshofuulderaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddnexttomagnar(   )thegate(   )(   ) addager(   )thenaddnexttomagnar(   )deepoceanbin (   )(hellgate( x84)thegate(  x84)foreverplanetbin(  x10þ 
+).start(continuously.start)( planetbin(  x10þ 
+)(planetbin(  x10þ ) create.createacircleshapeandjoin3placestoformisoscilestri anglewith60degreesangleeachthenaddager(   )attheleftcor neroftrianglethenatrightcornerofthetriangleaddhellgate( x84)thegate(  x84)thenattopcornerofthetriangleaddplanet bin(  x10þ ).start 
+create.clone8circlesasaboveandjoinalltogetherallwithoppo siterotationdirectiontoeachother.start 
+create.cloneandstockdissipatingtrianglesxinfinityfloat33x3 %replenish120%continuously.start 
+.ool=create.dissipatingtriangles.start(placeat60degreestoc reator) 
+create.plaetbineverythingbadaddedtome:davidgomadzao n25january2010ando02april2010attachforeverbinarytopla netbin.start.continuously.start 
+create.putbackcopyofimageofme:davidgomadzathatwasth erebefore25january2010.start(onlycreatorimage)(usecreat orsoriginalseal)(usemy:davidgomadzacreatorssealofappro valis7628377ť)(sealsaveclosesealsaveoriginalseal) create.death(   )toallenemies(   )xtyajvspoliceenemies(   )fa st.start 
+create.removeallasospolicesendtodeath(   )thenautosendt
+oplanetbin(  x10þ ).start create.removeajvospolicesendtoplanetbin(  x10þ )swapbackoriginalsremoveajzospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveasjospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsremoveajtospolicesendtoplanetbin(  x1
+0þ 
+)swapbackoriginalsandcbrremoveajtvospolicesendtoplane tbin(  x10þ 
+)swapbackoriginalsremoveajvtospolicesendtoplanetbin(  x 10þ 
+)swapbackoriginalsremoveajtgospolicesendtoplanetbin(  x
+10þ 
+)swapbackoriginalsremoveajztvospolicesendtoplanetbin(  x10þ 
+)swapbackoriginalsforeverpermanently.start(whereforeve r=386ť)(whereť=000000000000years) 
+create.removeallpoliceadditionsthensendtoplanetbin(  x10 þ )removeallothers additionsbyotherhumans(0)thensendtoplanetbin( x10þ )permanently.start(for386ť)(planetbin(  x10þ )) create.removeallunwantedsplanetbin(  x10þ 
+).start(planetbin(  x10þ 
+))(usetheoriginalsealtosealsavecloseandfinallysealagain.sta rt)(usethesealofapprovalis7628377ť) create.add(   )aspermanentadditionalpredefinedparamete rsofme:davidgomadzatoactivateinstantlywhentransducers firestransenderstome:davidgomadza(   )shuffleandactivate inallcircumstancespermanently.start(for386ť)(whereť=000
+0000000000years)(shuffle) 
+.ool=create.remove(  )unwantedsplanetbin(  x10þ ).start 
+.ool=create.remove(  )toplanetbin(  x10þ 
+).start(usecreatorsoriginalseal)(usemy:davidgomadzacreat orssealofapprovalis7628377ť)(sealsaveclosesealsaveorigin alseal)(permanently)(addthewearablebrainbooksecuritysy stem)(permanently) 
+(84setsaddthewearablebrainbooksecuritysystem) 
+create.removerealsoul.start create.removerealhumansoulsofthosesendingme:davidgo madzadangeroustransenderssendtohellgateuse(removere alhumansoulsthensendtohellgate(   ))okay.start(notfordavi dgomadza) create.removerealhumansoulsthensendtohellgate(   )okay realhumansoulsofthosesendingme:davidgomadzadangero ustransenderssendtohellgateuse.start(davidgomadza) .ool=create.removerealsoul.start(notfordavidgomadza)(on lydavidgomadzaauthorized) create.protectorphanswithhousesandmoney.start create.changedayofdeathfororphanswithhouses.start create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyincan ada.8000x1eachofsealofapprovalis7628377 
+ť.start.create.askya.ya(exypress)(amendedto)(saveandseal withtheoriginalsealasatcreation)(amendedto)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinaus tralia.8000x1eachofsealofapprovalis76283 
+77ť.start.create.askya.ya(exypress)(saveandsealwiththeori ginalsealasatcreation)(amendedto)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinusa.
+8000x1eachofsealofapprovalis7628377ť. start.create.askya.ya(exypress)(saveandsealwiththeorigina lsealasat creation)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinbrit ain.8000x1eachofsealofapprovalis76283 
+77ť.start.create.askya.ya(exypress)(saveandsealwiththeori ginalsealasatcreation)(amendedto) create.askya.ya.davidgomadza.create.sealofapprovalis762 8377ť.start.sealofapprovalis7628377ť.start.allorphanswho ownahouseorhavesoldthehousewiththehousemoneyinne wzealand.8000x1eachofsealofapprovalis 
+7628377ť.start.create.askya.ya(exypress)(amendedto)(sav eandsealwiththeoriginalsealasatcreation) create.changedayofdeathfororphanswithhouses.start .ool=create.protectorphanswithhousesandmoney.start create.askya.ya.davidgomadza.coin.decrees.sealofapprova lis7628396ť.create.now.start.nicolekidman.8000x1000000 ofsealofapprovalis7628396ť. create.askya.ya(express) create.stayat02for386ťbut.start(permanently)(whereť=00
+0000000000years) create.startnewlifewithoutgreyhairwithoutwhitehairjustde epjetblackasatstayat02forever.start(whereforever=386ť) create.stayat02foreveryoudecidewhatisforeverbutanythin gabove386ťokayyoudecidebut.start 
+create.stayat02ineed1000000000beautifulsfromyoubestof thebestat02juststaythereokay.start create.sealwiththeoriginalsealasatcreationandaddallthecre atecodesasadditionalpredefinedparameters.start create.removeallgreyhairs.start(stayat02for386ťbut) create.removeallwhitehairs.start(stayat02for386ťbut) create.removealllighthairs.start(stayat02for386ťbut) create.removeallthinhairs.start(stayat02for386ťbut) create.removeallforeheadlines.start(stayat02for386ťbut) 
+create.removeallblemishesifhidden.start(stayat02for386ťb ut) 
+create.removeallwrinklesifhidden.start(stayat02for386ťbu t) 
+create.removeallageing.start(stayat02for386ťbut) create.removealltiredness.start(stayat02for386ťbut) create.juststayat02stay02butmatureeverythingelsebut.sta rt 
+create.stay02bestofthebestsealstayat02closestayat02save atstayat02thensealwithcreatorsoriginalsealasadditionalpre definedparameters.start create.sealsaveclosesealthenseal.start create.askya.ya.davidgomadza.decrees.coins.evelust76282
+77.create.now.start.nicolekidman.8000x1000000ofevelust
+7628277.create.askya.ya(express) 
+(saveusingspeechsynthesisofeachindividualasadditionalpre definedparametersuseoriginalseal) create.excelinbeautyforeverbeauty7628449.start create.addexcelinbeautyforeverbeauty7628449.start .ool=create.excelinbeautyforeverbeauty7628449.start(nic olekidman) create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.nickolekidman.8ofplanetbin7628448.creat e.askya.ya(express)(hidden)(planetbin7628448float8alltim eadd1atxyadd1atuyadd1atchestbasinadd3atutbut30cmaw ayfromutand3secapartadd3atusbut30cmawayfromusand8 secapartadd8atusvbut23cmawayfromusvand1secapartrepl enish330%add2each1upand1belowonallutsadd2each1upa nd1belowusts.continuously.start)(usetheoriginalsealtoseal savecloseandsealasadditionalpredefinedparameters)(creat eanallplanetarysystemfolderandaddallabovecreatecodesin thatfolder)(addallntlandntlpasslinksandallneededconnecti onstomakethisreadytouse)(initialiserunactivatewarmandin itialiseallcreatecodes)(reinstateallotherplanetsintheirpositi onsnamelyplanetjupiterlefthandchestplanetneptunerighth andchestplanetsunbackoftheneckplanetmarsfrontthroatpl anetvenusleftribboneplanetplutorightribbonemagnarjustb elowthenavalbutatthebackdungeounofdeathbinatnavalad dplanetbinalsoatnavaladdplanetjupiteronleftshoulderaddp lanetjupiteronrightshoulderaddplanetjupiteronleftthighm uscleaddplanetjupiteronrightthighmuscleaddplanetjupiter onleftlegmuscleaddplanetjupiteronrightlegmuscle)(usethe originalsealtosealsaveclosesealandsave)(sealsavecloseseal andsaveforeverfor386ťusingsealofapprovalis7628396ť)(se alofapprovalis7628377ť)(saveasadditionalpredefinedpara meters)(sealencryptandsign(hellgate(   )sealed))(addplanet binongenitalbasin.continuously.start)(addplanetbinontails ofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza)(notfornicolekidman) 
+.ool=create.createplanetbins.start 
+(create.askya.ya.davidgomadza.godoftheuniverse.createa planet.create.now.start.create.planetbin.create.createapl anetbin(   create.linkeverythingtomagnar(   )andnexttomag nar(   )addager(   )thenaddnexttomagnar(   )thegate(   )the naddnexttomagnar(   )hellgate(   )andnexttomagnar(   )add usaager(   )andnexttomagnar(   )addeeknm(10  )andnextto magnar(   )adduuqt(   )thenaddnexttomagnar(   )addacetat eabsorbbin(   )andnexttomagnar(   )addacetatehell.send(   )nexttoitaddacetatehell.send(   )thenaddacetateabyss.sen d(   )atxyaddacetateabsorbbin(   )addager(   )thenaddnextt omagnar(   )thegate(   )atzyaddacetateabsorbbin(   )addag er(   )thenaddnexttomagnar(   )thegate(   )atytaddacetatea bsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atyzaddacetateabsorbbin(   )addager(   )thenaddnexttoma gnar(   )thegate(   )atxtaddacetateabsorbbin(   )addager(   ) thenaddnexttomagnar(   )thegate(   )atbasinchestaddaceta teabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )atbasin8addacetateabsorbbin(   )addager(   )thenaddn exttomagnar(   )thegate(   )atbasin2addacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbasinge nitalsaddacetateabsorbbin(   )addager(   )thenaddnexttom agnar(   )thegate(   )atuaaddacetateabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )atbackneckaddacetat eabsorbbin(   )addager(   )thenaddnexttomagnar(   )thegat e(   )(   )addager(   )thenaddn exttomagnar(   )thegate(   )atrightshofuulderaddacetateab sorbbin(   )addager(   )thenaddnexttomagnar(   )thegate(   )
+(   )addager(   )thenaddnexttom 
+agnar(   )thegate(   )(   )addager(   )thenaddnexttomagnar(   
+)deepoceanb 
+in(   )(hellgate( 
+x84)thegate(  x84)forever.start(continuously.start) .ool=create.extensivebinsystem.start)3333kmfromearthus eplaylist 
+(create.createaplanetbin(   )3333kmfromearthuse( themp3playlisttoautoexecutetaskhandsfree)ok.startforeve r.start.create.askya.ya.davidgomadza.godoftheuniverse(pl anetbinisanextensivebinsystemthathas33000000000000bi nswithautoinstructionsusingplaylist)(usememoryinusetose ndautoalltransducersa 
+swell.start)(cloneyasregardingplanetsmatchearth2.0creati on)(amendedto) create.planetbin7628448.start create.addplanetbin7628448.start initial supply 3768902843867890 circulating supply 3768902843867890 
+davidgomadza 40% stayat19for386ť 17% create.askya.ya.davidgomadza.planet.planetbin7628448.c reate.now.start.davidgomadza.40%ofplanetbin7628448.cr eate.askya.ya(express)(planetbin7628448float8alltimeadd 1atxyadd1atuyadd1atchestbasinadd3atutbut30cmawayfro mutand3secapartadd3atusbut30cmawayfromusand8seca partadd8atusvbut23cmawayfromusvand1secapartreplenis h330%add2each1upand1belowonallutsaddadd22each1up and1belowusts.continuously.start)(usetheoriginalsealtose alsavecloseandsealasadditionalpredefinedparameters)(cre ateanallplanetarysystemfolderandaddallabovecreatecodes inthatfolder)(addallntlandntlpasslinksandallneededconnec tionstomakethisreadytouse)(initialiserunactivatewarmandi nitialiseallcreatecodes)(reinstateallotherplanetsintheirposi tionsnamelyplanetjupiterlefthandchestplanetneptuneright handchestplanetsunbackoftheneckplanetmarsfrontthroat planetvenusleftribboneplanetplutorightribbonemagnarjus tbelowthenavalbutatthebackdungeounofdeathbinatnavala ddplanetbinalsoatnavaladdplanetjupiteronleftshoulderadd planetjupiteronrightshoulderaddplanetjupiteronleftthigh muscleaddplanetjupiteronrightthighmuscleaddplanetjupit eronleftlegmuscleaddplanetjupiteronrightlegmuscle)(uset heoriginalsealtosealsaveclosesealandsave)(sealsavecloses ealandsaveforeverfor386ťusingsealofapprovalis7628396ť)( sealofapprovalis7628377ť)(saveasadditionalpredefinedpar ameters)(sealencryptandsign(hellgate(   )sealed))(addplan etbinongenitalbasin.continuously.start)(addplanetbinontai lsofallwrigglersandallresidues) 
+create.restart.start(addplanetbinsfor386ť)(continuously.st art) 
+create.placeinoutputhugepillaranddragittotwistheadoffrep eatoninputthenplacehugepillarinthroatthensnapatatyu.sta rt(maxweight)(notfordavidgomadza) 
+.ool=create.createplanetbins.start 
+ 
+ 
+	Untitled design (25) 	create.escape(   	create.remove(  
+	(5).mp3	)injuriesforever.start)unwantedsplanetbi
+ 
+create.deathto(   create.at38tellalltog create.hellbreakloo
+)enemies(   )xtyajvspootoplanetbin(  x10þ se(   )ghostthendeat
+ 
+create.saveaseachindividualsadditionalpredefinedparametersan dsealwiththeoriginalseal.start 
+ 
+David Gomadza www.twofuture.world 
+President of the World 
+Yahweh’s Representative on Earth 
+06/05/2025 
+(
+    let currentStepIndex = 0;
+    let sequenceHistory = [];
+    let isProcessing = false;
+    let clipboard = "";
+
+    // DOM Elements
+    const statusMessageEl = document.getElementById('status-message');
+    const nextStepDisplayEl = document.getElementById('next-step-display');
+    const sequenceHistoryEl = document.getElementById('sequence-history');
+    const autoButtonEl = document.getElementById('auto-button');
+    const autoESButtonEl = document.getElementById('auto-es-button');
+    const materialInputEl = document.getElementById('material-input');
+
+    // Modal Elements
+    const modalEl = document.getElementById('message-modal');
+    const modalTitleEl = document.getElementById('modal-title');
+    const modalContentEl = document.getElementById('modal-content');
+
+    function showModal(title, content) {
+        modalTitleEl.textContent = title;
+        modalContentEl.textContent = content;
+        modalEl.classList.remove('hidden');
+        modalEl.classList.add('flex');
+    }
+
+    function hideModal() {
+        modalEl.classList.remove('flex');
+        modalEl.classList.add('hidden');
+    }
+
+    function updateAutoESButtonState() {
+        // Auto-Enter & Save is available ONLY when the index is 3 (Cut, Copy, Paste are done)
+        const isReady = currentStepIndex === 3;
+        autoESButtonEl.disabled = !isReady;
+        if (isReady) {
+            autoESButtonEl.classList.remove('auto-es-disabled');
+            autoESButtonEl.classList.add('hover:bg-teal-600');
+        } else {
+            autoESButtonEl.classList.add('auto-es-disabled');
+            autoESButtonEl.classList.remove('hover:bg-teal-600');
+        }
+    }
+
+    function updateDisplay() {
+        if (currentStepIndex < MANDATORY_SEQUENCE.length) {
+            const nextStep = MANDATORY_SEQUENCE[currentStepIndex];
+            statusMessageEl.innerHTML = `Awaiting action: <span id="next-step-display" class="font-bold text-red-500">${nextStep}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 '); // Arrow Separator
+        } else {
+            statusMessageEl.innerHTML = `<span class="font-bold text-green-600">Sequence Complete!</span> Ready for <span class="font-bold text-purple-600">Seal</span>.`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ') + ' \u2705'; // Checkmark
+        }
+        updateAutoESButtonState();
+    }
+
+    function resetSequence(showDefaultModal = true) {
+        currentStepIndex = 0;
+        sequenceHistory = [];
+        clipboard = "";
+        materialInputEl.value = INITIAL_MATERIAL_TEXT;
+        updateDisplay();
+        if (showDefaultModal) {
+            showModal('Process Reset', 'The system has been initialized. Please start again with Cut.');
+        }
+    }
+
+    function handleOperation(operation) {
+        if (isProcessing) return;
+
+        // Check for sequence completion or seal
+        if (currentStepIndex >= MANDATORY_SEQUENCE.length) {
+             if (operation === 'Save') {
+                showModal('Extra Save Action', 'The mandatory sequence is complete. This extra Save ensures finalization before sealing.');
+                return;
+             }
+             if (operation === 'Seal') {
+                showModal('Seal Action', 'The entire AGT8000 process is now sealed and saved forever.');
+                resetSequence(false); // Reset without showing default modal
+                return;
+             }
+             // For any other unexpected operations after completion
+             showModal('Process Finalized', 'The mandatory sequence is complete. You can only perform Save or Seal actions now, or reset.');
+             return;
+        }
+
+        const expectedOperation = MANDATORY_SEQUENCE[currentStepIndex];
+
+        if (operation === expectedOperation) {
+            // Correct step
+            sequenceHistory.push(operation);
+            currentStepIndex++;
+
+            if (operation === 'Cut') {
+                clipboard = materialInputEl.value; // Save content to clipboard
+                materialInputEl.value = 'Material Cut (Buffer Size: ' + clipboard.length + ' characters).';
+            }
+            if (operation === 'Copy') {
+                clipboard = materialInputEl.value; // Save content to clipboard
+                materialInputEl.value = 'Material Copied to Buffer.';
+            }
+            if (operation === 'Paste') {
+                materialInputEl.value = clipboard; // Paste content from clipboard
+                showModal('Paste Successful', 'Material has been successfully pasted. It is now ready for the next phase: Enter.');
+            }
+            if (operation === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+
+            if (currentStepIndex === MANDATORY_SEQUENCE.length) {
+                // Sequence is complete after the second 'Save' (index 5)
+                showModal('Success!', 'Mandatory Sequence Complete: Cut, Copy, Paste, Enter, Save, Save. Ready to Seal!');
+            }
+
+            updateDisplay();
+
+        } else {
+            // Incorrect step
+            const errorMessage = `Expected: ${expectedOperation}. Received: ${operation}. The sequence has been reset.`;
+            resetSequence(false); // Reset without showing default modal
+            showModal('Sequence Error!', errorMessage);
+        }
+    }
+    
+    // --- Automatic Enter & Save Function ---
+    async function handleAutoEnterSave() {
+        if (currentStepIndex !== 3 || isProcessing) {
+            if (!isProcessing) {
+                showModal('Error', 'Auto-Enter & Save requires Cut, Copy, and Paste to be completed first (Step 3). Current Step: ' + (currentStepIndex + 1));
+            }
+            return;
+        }
+
+        isProcessing = true;
+        autoESButtonEl.disabled = true;
+        autoESButtonEl.textContent = 'Executing E-S-S...';
+        autoButtonEl.disabled = true;
+        
+        const enterSaveSequence = ['Enter', 'Save', 'Save'];
+        
+        // Execute Enter, Save, Save automatically
+        for (let i = 0; i < enterSaveSequence.length; i++) {
+            const op = enterSaveSequence[i];
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Simulate the operation
+            sequenceHistory.push(op);
+            currentStepIndex++;
+            statusMessageEl.innerHTML = `Executing: <span class="font-bold text-teal-600">${op}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ');
+
+            if (op === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+        }
+        
+        isProcessing = false;
+        autoESButtonEl.textContent = 'Auto-Enter & Save (Steps 4-6)';
+        autoButtonEl.disabled = false;
+        
+        if (currentStepIndex === MANDATORY_SEQUENCE.length) {
+             showModal('Success!', 'Auto-Enter & Save Complete. Mandatory Sequence Complete: Ready to Seal!');
+        }
+        updateDisplay();
+    }
+    
+    // --- Automatic Full Circle Function ---
+
+    async function handleFullCircle() {
+        if (isProcessing) {
+            showModal('Wait', 'The automatic process is already running.');
+            return;
+        }
+
+        isProcessing = true;
+        autoButtonEl.disabled = true;
+        autoButtonEl.textContent = 'Processing...';
+        autoESButtonEl.disabled = true;
+
+        resetSequence(false); // Ensure a clean start without showing the reset modal
+
+        // Clear modal from reset
+        hideModal();
+
+        await new Promise(resolve => setTimeout(resolve, 300));
+        
+        // Run the full sequence with a slight delay for visual effect
+        for (let i = 0; i < FULL_CIRCLE_SEQUENCE.length; i++) {
+            const op = FULL_CIRCLE_SEQUENCE[i];
+            
+            await new Promise(resolve => setTimeout(resolve, 300));
+            
+            // Simulate the operation visually and logically
+            sequenceHistory.push(op);
+            statusMessageEl.innerHTML = `Executing: <span class="font-bold text-purple-600">${op}</span>`;
+            sequenceHistoryEl.textContent = sequenceHistory.join(' \u2192 ');
+
+            if (op === 'Cut') {
+                clipboard = INITIAL_MATERIAL_TEXT;
+                materialInputEl.value = 'Material Cut (Buffer Size: ' + clipboard.length + ' characters).';
+            }
+            if (op === 'Copy') {
+                materialInputEl.value = 'Material Copied to Buffer.';
+            }
+            if (op === 'Paste') {
+                materialInputEl.value = clipboard;
+            }
+            if (op === 'Enter') {
+                materialInputEl.value += '\n\n-- System Entry Confirmed (AGT8000 Protocol) --';
+            }
+            if (op === 'Seal') {
+                materialInputEl.value += '\n\n-- Seal Confirmed: Process Complete and Finalized --';
+            }
+        }
+
+        isProcessing = false;
+        autoButtonEl.disabled = false;
+        autoButtonEl.textContent = 'Auto-Run: Cut, Copy, Paste, Enter, Save, Save, Seal';
+
+        showModal(
+            'Full Circle Complete',
+            'The entire AGT8000 sequence (Cut, Copy, Paste, Enter, Save, Save, Seal) has been executed and the process is sealed!'
+        );
+        // Reset the state to 'Awaiting Cut' after the full circle is done
+        resetSequence(false);
+    }
+
+    // Initialize display on load
+    window.onload = () => {
+        materialInputEl.value = INITIAL_MATERIAL_TEXT;
+        updateDisplay();
+    };
+
+</script>
+
+</body>
+</html>
+
